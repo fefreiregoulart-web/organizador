@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Organizador de Tarefas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile */
+        }
+        
+        .grid-bg {
+            background-image: linear-gradient(transparent 47px, #e5e7eb 47px);
+            background-size: 100% 48px;
+        }
+
+        .task-card {
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), top 0.2s ease;
+        }
+        
+        .task-card.dragging {
+            transition: none;
+            z-index: 50;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .task-card.swiping {
+            transition: none;
+        }
+        
+        .task-card.swiped {
+            transform: translateX(-120px);
+        }
+
+        /* Hide scrollbar for cleaner look but allow scrolling */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden">
+
+    <!-- Timer Alert Bar (Hidden by default) -->
+    <div id="timerBar" class="hidden bg-blue-600 text-white p-3 shadow-md z-40 flex items-center justify-between shrink-0 transition-all duration-300">
+        <div class="flex items-center space-x-2">
+            <svg id="timerIcon" class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <span id="timerText" class="font-semibold">00:00</span>
+        </div>
+        <div id="timerTaskTitle" class="text-sm opacity-90 truncate max-w-[50%] mr-4"></div>
+        <button onclick="stopTimer()" class="p-1 hover:bg-white/20 rounded-full transition-colors">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 p-4 shrink-0 shadow-sm z-30 flex items-center justify-between">
+        <h1 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            Organizador de Tarefas
+        </h1>
+        <span id="currentTimeDisplay" class="text-gray-500 font-medium">00:00</span>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 relative overflow-y-auto overflow-x-hidden touch-pan-y no-scrollbar" id="mainScrollArea">
+        <div class="absolute inset-0 grid-bg pointer-events-none"></div>
+        
+        <!-- Interactive Container inside scroll area -->
+        <div id="gridContainer" class="relative w-full min-h-[1200px]" style="height: 1200px;">
+            
+            <!-- Real-time Dot -->
+            <div class="absolute right-3 w-4 h-full pointer-events-none z-20">
+                <div id="progressDot" class="absolute w-4 h-4 bg-blue-500 rounded-full shadow-md shadow-blue-500/50 transition-all duration-1000 ease-in-out z-30 ring-4 ring-blue-100" style="top: 48px; transform: translateY(-50%);">
+                    <div class="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-75"></div>
+                </div>
+                <div class="absolute left-1.5 top-0 bottom-0 w-0.5 bg-gray-200 -z-10"></div>
+            </div>
+
+            <!-- Markers -->
+            <div id="startMarker" class="absolute left-4 z-20 flex items-center gap-2 cursor-pointer group" style="top: 48px; height: 48px; transform: translateY(-100%);" onclick="editMarkerTime('start')">
+                <div class="w-2 h-2 rounded-full bg-gray-400 group-hover:bg-blue-500 transition-colors"></div>
+                <span class="text-sm font-semibold text-gray-500 group-hover:text-blue-600 transition-colors border-b border-dashed border-transparent group-hover:border-blue-300">
+                    <span id="startMarkerLabel">Início da Tarde</span> (<span id="startMarkerTime">13:00</span>)
+                </span>
+            </div>
+
+            <div id="endMarker" class="absolute left-4 z-20 flex items-center gap-2 cursor-pointer group" style="top: 576px; height: 48px;" onclick="editMarkerTime('end')">
+                <div class="w-2 h-2 rounded-full bg-gray-400 group-hover:bg-blue-500 transition-colors"></div>
+                <span class="text-sm font-semibold text-gray-500 group-hover:text-blue-600 transition-colors border-b border-dashed border-transparent group-hover:border-blue-300">
+                    <span id="endMarkerLabel">Final da Tarde</span> (<span id="endMarkerTime">18:00</span>)
+                </span>
+            </div>
+
+            <!-- Tasks Container -->
+            <div id="tasksContainer" class="absolute inset-0 pointer-events-none"></div>
+            
+            <!-- Click Overlay for New Tasks -->
+            <div id="clickOverlay" class="absolute inset-0 z-0 cursor-pointer" onclick="openNewTaskModal(event)"></div>
+        </div>
+    </main>
+
+    <!-- New Task Modal -->
+    <div id="taskModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity" onclick="closeModals()">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md" onclick="event.stopPropagation()">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Nova Tarefa</h2>
+                <button onclick="closeModals()" class="p-1 hover:bg-gray-100 rounded-full"><svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+            </div>
+            
+            <form id="taskForm" onsubmit="handleTaskSubmit(event)" class="space-y-4">
+                <input type="hidden" id="taskYPos">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Título *</label>
+                    <input required id="taskTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" placeholder="O que você vai fazer?">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                    <textarea id="taskDesc" rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-shadow resize-none" placeholder="Detalhes opcionais..."></textarea>
+                </div>
+
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Início</label>
+                        <input type="time" id="taskStartTime" class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-blue-500">
+                    </div>
+                    <div class="flex-1">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Término</label>
+                        <input type="time" id="taskEndTime" class="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Cor</label>
+                    <div class="flex gap-3" id="colorPicker">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full mt-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                    Adicionar Tarefa
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Timer Config Modal -->
+    <div id="timerModal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onclick="closeModals()">
+        <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-bold text-gray-800 mb-2">Cronometrar Tarefa</h3>
+            <p id="timerModalTaskTitle" class="text-gray-600 mb-6 truncate"></p>
+
+            <div class="space-y-3">
+                <button onclick="startCountdown(25)" class="w-full py-3 px-4 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium transition-colors flex items-center justify-between">
+                    <span>Foco: 25 minutos</span>
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                </button>
+                <button onclick="startCountdown(15)" class="w-full py-3 px-4 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 font-medium transition-colors flex items-center justify-between">
+                    <span>Rápida: 15 minutos</span>
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
+                </button>
+                <button id="btnAlarmEndTime" onclick="startAlarm()" class="hidden w-full mt-2 py-3 px-4 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 font-medium transition-colors flex items-center justify-between">
+                    <span id="alarmEndTimeText">Avisar às --:--</span>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Constants & Config
+        const GRID_SIZE = 48;
+        const COLORS = [
+            { name: 'Azul', val: 'bg-blue-100 border-blue-300 text-blue-900', ring: 'focus:ring-blue-300' },
+            { name: 'Verde', val: 'bg-green-100 border-green-300 text-green-900', ring: 'focus:ring-green-300' },
+            { name: 'Amarelo', val: 'bg-yellow-100 border-yellow-300 text-yellow-900', ring: 'focus:ring-yellow-300' },
+            { name: 'Rosa', val: 'bg-pink-100 border-pink-300 text-pink-900', ring: 'focus:ring-pink-300' },
+            { name: 'Roxo', val: 'bg-purple-100 border-purple-300 text-purple-900', ring: 'focus:ring-purple-300' },
+        ];
+
+        // State
+        let tasks = [
+            { id: '1', title: 'Revisar emails', desc: 'Responder urgentes', colorIdx: 0, startTime: '14:00', endTime: '14:30', yPos: GRID_SIZE * 3 },
+            { id: '2', title: 'Reunião de Alinhamento', desc: '', colorIdx: 2, startTime: '15:00', endTime: '16:00', yPos: GRID_SIZE * 6 }
+        ];
+
+        let markers = {
+            start: { time: '13:00', yPos: GRID_SIZE * 1 },
+            end: { time: '18:00', yPos: GRID_SIZE * 12 }
+        };
+
+        let timerState = { active: false, type: null, remaining: 0, targetTime: null, taskTitle: '', intervalId: null };
+        let activeTimerTaskId = null;
+        let activeSwipedId = null;
+
+        // DOM Elements
+        const tasksContainer = document.getElementById('tasksContainer');
+        const progressDot = document.getElementById('progressDot');
+        const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+        const colorPickerContainer = document.getElementById('colorPicker');
+        
+        // Utilities
+        function timeToMins(timeStr) {
+            if (!timeStr) return 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function formatMinsToTime(mins) {
+            const h = Math.floor(mins / 60).toString().padStart(2, '0');
+            const m = (mins % 60).toString().padStart(2, '0');
+            return `${h}:${m}`;
+        }
+
+        function formatDuration(seconds) {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        // Initialize UI
+        function init() {
+            // Populate Color Picker
+            COLORS.forEach((c, i) => {
+                const label = document.createElement('label');
+                const [bg, border] = c.val.split(' ');
+                label.className = `w-8 h-8 rounded-full cursor-pointer flex items-center justify-center shadow-sm border-2 ${bg} ${border} relative`;
+                label.innerHTML = `
+                    <input type="radio" name="taskColor" value="${i}" ${i === 0 ? 'checked' : ''} class="peer opacity-0 absolute inset-0 cursor-pointer">
+                    <div class="hidden peer-checked:block w-3 h-3 rounded-full bg-black/40"></div>
+                `;
+                colorPickerContainer.appendChild(label);
+            });
+
+            updateClock();
+            setInterval(updateClock, 60000); // Every minute
+            
+            setInterval(calculateDotPosition, 10000); // Update dot pos every 10s
+
+            renderTasks();
+            setupGlobalDragListeners();
+        }
+
+        function updateClock() {
+            const now = new Date();
+            currentTimeDisplay.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            calculateDotPosition();
+        }
+
+        function calculateDotPosition() {
+            const now = new Date();
+            const currentMins = now.getHours() * 60 + now.getMinutes();
+
+            // Gather anchors for interpolation
+            let anchors = [
+                { time: timeToMins(markers.start.time), y: markers.start.yPos },
+                { time: timeToMins(markers.end.time), y: markers.end.yPos }
+            ];
+
+            tasks.forEach(t => {
+                if (t.startTime) anchors.push({ time: timeToMins(t.startTime), y: t.yPos });
+            });
+
+            // Deduplicate by time and sort
+            const uniqueMap = new Map();
+            anchors.forEach(a => {
+                if (!uniqueMap.has(a.time) || a.y < uniqueMap.get(a.time).y) {
+                    uniqueMap.set(a.time, a); // Prioritize higher Y if same time (though shouldn't happen ideally)
+                }
+            });
+            anchors = Array.from(uniqueMap.values()).sort((a, b) => a.time - b.time);
+
+            if (anchors.length < 2) {
+                progressDot.style.top = `${markers.start.yPos}px`;
+                return;
+            }
+
+            let yPos = markers.start.yPos;
+            const first = anchors[0];
+            const last = anchors[anchors.length - 1];
+
+            if (currentMins <= first.time) {
+                yPos = first.y;
+            } else if (currentMins >= last.time) {
+                yPos = last.y;
+            } else {
+                for (let i = 0; i < anchors.length - 1; i++) {
+                    if (currentMins >= anchors[i].time && currentMins < anchors[i+1].time) {
+                        const prev = anchors[i];
+                        const next = anchors[i+1];
+                        const range = next.time - prev.time;
+                        if (range > 0) {
+                            const progress = (currentMins - prev.time) / range;
+                            const yRange = next.y - prev.y;
+                            yPos = prev.y + (yRange * progress);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            progressDot.style.top = `${yPos}px`;
+        }
+
+        function renderTasks() {
+            tasksContainer.innerHTML = '';
+            
+            tasks.forEach(task => {
+                const color = COLORS[task.colorIdx].val;
+                
+                const wrapper = document.createElement('div');
+                wrapper.className = `absolute left-4 right-12 select-none pointer-events-auto group task-wrapper`;
+                wrapper.style.top = `${task.yPos}px`;
+                wrapper.style.height = `${GRID_SIZE - 4}px`; // 4px gap
+                wrapper.dataset.id = task.id;
+
+                // Action Background
+                const actionBg = document.createElement('div');
+                actionBg.className = 'absolute inset-y-0 right-0 flex items-center bg-gray-100 rounded-lg shadow-inner overflow-hidden';
+                actionBg.style.width = '120px';
+                actionBg.innerHTML = `
+                    <button onclick="deleteTask('${task.id}')" class="action-btn flex-1 h-full flex items-center justify-center bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                    <button onclick="openTimerModal('${task.id}')" class="action-btn flex-1 h-full flex items-center justify-center bg-blue-50 text-blue-500 hover:bg-blue-100 transition-colors">
+                        <svg class="w-5 h-5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                `;
+
+                // Main Card
+                const card = document.createElement('div');
+                card.className = `task-card absolute inset-0 flex flex-col justify-center px-4 rounded-lg border shadow-sm cursor-grab active:cursor-grabbing ${color}`;
+                if (activeSwipedId === task.id) {
+                    card.classList.add('swiped');
+                }
+
+                let timeText = '';
+                if (task.startTime) {
+                    timeText = task.startTime + (task.endTime ? ` - ${task.endTime}` : '');
+                }
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-center w-full pointer-events-none">
+                        <span class="font-medium truncate flex-1">${task.title}</span>
+                        ${timeText ? `<span class="text-xs opacity-70 ml-2 whitespace-nowrap">${timeText}</span>` : ''}
+                    </div>
+                `;
+
+                // Attach pointer events for drag/swipe directly to the card
+                card.addEventListener('pointerdown', (e) => startDrag(e, task.id, card, wrapper));
+
+                wrapper.appendChild(actionBg);
+                wrapper.appendChild(card);
+                tasksContainer.appendChild(wrapper);
+            });
+            
+            calculateDotPosition();
+        }
+
+        // Drag & Swipe Logic
+        let currentDrag = null;
+
+        function startDrag(e, id, cardEl, wrapperEl) {
+            // Ignore if clicking action buttons
+            if (e.target.closest('.action-btn')) return;
+            
+            // Close other swiped cards
+            if (activeSwipedId !== id && activeSwipedId !== null) {
+                const prevSwiped = document.querySelector(`.task-wrapper[data-id="${activeSwipedId}"] .task-card`);
+                if (prevSwiped) {
+                    prevSwiped.classList.remove('swiped');
+                    prevSwiped.style.transform = '';
+                }
+                activeSwipedId = null;
+            }
+
+            const isAlreadySwiped = cardEl.classList.contains('swiped');
+
+            currentDrag = {
+                id,
+                card: cardEl,
+                wrapper: wrapperEl,
+                initialY: parseInt(wrapperEl.style.top) || 0,
+                startX: e.clientX,
+                startY: e.clientY,
+                currentX: e.clientX,
+                currentY: e.clientY,
+                type: null, // 'drag' (vertical) or 'swipe' (horizontal)
+                isSwiped: isAlreadySwiped,
+                baseTransformX: isAlreadySwiped ? -120 : 0
+            };
+
+            cardEl.setPointerCapture(e.pointerId);
+        }
+
+        function setupGlobalDragListeners() {
+            window.addEventListener('pointermove', (e) => {
+                if (!currentDrag) return;
+                
+                const dx = e.clientX - currentDrag.startX;
+                const dy = e.clientY - currentDrag.startY;
+
+                // Determine drag intent if not yet known
+                if (!currentDrag.type) {
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+                        currentDrag.type = 'swipe';
+                        currentDrag.card.classList.add('swiping');
+                        currentDrag.card.classList.remove('swiped'); // Temporarily remove class to use inline styles for smoothness
+                    } else if (Math.abs(dy) > 10) {
+                        currentDrag.type = 'drag';
+                        currentDrag.card.classList.add('dragging');
+                        currentDrag.wrapper.style.zIndex = '50';
+                    }
+                }
+
+                if (currentDrag.type === 'drag') {
+                    // Prevent page scroll while dragging vertically
+                    e.preventDefault(); 
+                    
+                    let newY = currentDrag.initialY + dy;
+                    // Constrain to container
+                    newY = Math.max(0, newY);
+                    currentDrag.wrapper.style.top = `${newY}px`;
+                    
+                } else if (currentDrag.type === 'swipe') {
+                    // Prevent page scroll while swiping horizontally
+                    e.preventDefault(); 
+                    
+                    let newX = currentDrag.baseTransformX + dx;
+                    // Constrain swipe bounds
+                    newX = Math.max(-120, Math.min(0, newX));
+                    currentDrag.card.style.transform = `translateX(${newX}px)`;
+                }
+            }, { passive: false });
+
+            window.addEventListener('pointerup', (e) => {
+                if (!currentDrag) return;
+
+                if (currentDrag.type === 'drag') {
+                    currentDrag.card.classList.remove('dragging');
+                    currentDrag.wrapper.style.zIndex = '';
+                    
+                    // Snap to grid
+                    const dy = e.clientY - currentDrag.startY;
+                    let targetY = currentDrag.initialY + dy;
+                    targetY = Math.max(0, targetY);
+                    const snappedY = Math.round(targetY / GRID_SIZE) * GRID_SIZE;
+                    
+                    // Update state
+                    const task = tasks.find(t => t.id === currentDrag.id);
+                    if (task) task.yPos = snappedY;
+                    
+                    // Apply visual snap
+                    currentDrag.wrapper.style.top = `${snappedY}px`;
+                    
+                } else if (currentDrag.type === 'swipe') {
+                    currentDrag.card.classList.remove('swiping');
+                    
+                    const dx = e.clientX - currentDrag.startX;
+                    const finalX = currentDrag.baseTransformX + dx;
+
+                    // Threshold to lock swipe open or closed
+                    if (finalX < -60) {
+                        activeSwipedId = currentDrag.id;
+                        currentDrag.card.classList.add('swiped');
+                        currentDrag.card.style.transform = ''; // Use CSS class for position
+                    } else {
+                        if (activeSwipedId === currentDrag.id) activeSwipedId = null;
+                        currentDrag.card.classList.remove('swiped');
+                        currentDrag.card.style.transform = '';
+                    }
+                } else {
+                    // Was just a click, do nothing
+                    if(activeSwipedId === currentDrag.id) {
+                         // Click on already swiped card closes it
+                         currentDrag.card.classList.remove('swiped');
+                         activeSwipedId = null;
+                    }
+                }
+
+                currentDrag.card.releasePointerCapture(e.pointerId);
+                currentDrag = null;
+                
+                // If it was a drag, re-render might not be strictly necessary as we manipulated DOM, 
+                // but calculate dot pos might need update if we start using tasks positions for anchors dynamically.
+                calculateDotPosition();
+            });
+        }
+
+        // Modal Logic
+        function openNewTaskModal(e) {
+            // Don't open if clicking on a task
+            if (e.target.closest('.task-wrapper')) return;
+            
+            // Close any open swiped cards
+            if (activeSwipedId) {
+                renderTasks(); // Lazy way to reset swiped states
+                activeSwipedId = null;
+                return;
+            }
+
+            const container = document.getElementById('gridContainer');
+            const rect = container.getBoundingClientRect();
+            const clickY = e.clientY - rect.top;
+            const snappedY = Math.floor(clickY / GRID_SIZE) * GRID_SIZE;
+
+            document.getElementById('taskYPos').value = snappedY;
+            document.getElementById('taskForm').reset();
+            
+            // Default time based on clicked position rough estimation based on markers
+            // Simple approach: just leave blank.
+            
+            const modal = document.getElementById('taskModal');
+            modal.classList.remove('hidden');
+            document.getElementById('taskTitle').focus();
+        }
+
+        function closeModals() {
+            document.getElementById('taskModal').classList.add('hidden');
+            document.getElementById('timerModal').classList.add('hidden');
+        }
+
+        function handleTaskSubmit(e) {
+            e.preventDefault();
+            const yPos = parseInt(document.getElementById('taskYPos').value);
+            const title = document.getElementById('taskTitle').value;
+            const desc = document.getElementById('taskDesc').value;
+            const startTime = document.getElementById('taskStartTime').value;
+            const endTime = document.getElementById('taskEndTime').value;
+            
+            let colorIdx = 0;
+            const colorRadios = document.getElementsByName('taskColor');
+            for (let i = 0; i < colorRadios.length; i++) {
+                if (colorRadios[i].checked) {
+                    colorIdx = parseInt(colorRadios[i].value);
+                    break;
+                }
+            }
+
+            if (!title.trim()) return;
+
+            tasks.push({
+                id: Date.now().toString(),
+                title, desc, colorIdx, startTime, endTime, yPos
+            });
+
+            closeModals();
+            renderTasks();
+        }
+
+        function deleteTask(id) {
+            tasks = tasks.filter(t => t.id !== id);
+            activeSwipedId = null;
+            renderTasks();
+        }
+
+        function editMarkerTime(type) {
+            const current = markers[type].time;
+            const label = markers[type].label || (type === 'start' ? 'Início' : 'Final');
+            
+            // Native prompt is reliable for vanilla simple input
+            const newTime = prompt(`Novo horário para ${type === 'start' ? 'Início da Tarde' : 'Final da Tarde'} (HH:MM):`, current);
+            
+            if (newTime && /^\d{2}:\d{2}$/.test(newTime)) {
+                markers[type].time = newTime;
+                document.getElementById(`${type}MarkerTime`).textContent = newTime;
+                calculateDotPosition();
+            } else if (newTime !== null) {
+                alert("Formato inválido. Use HH:MM");
+            }
+        }
+
+        // Timer Logic
+        function openTimerModal(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+            
+            activeTimerTaskId = taskId;
+            document.getElementById('timerModalTaskTitle').textContent = `"${task.title}"`;
+            
+            const alarmBtn = document.getElementById('btnAlarmEndTime');
+            if (task.endTime) {
+                alarmBtn.classList.remove('hidden');
+                document.getElementById('alarmEndTimeText').textContent = `Avisar às ${task.endTime}`;
+            } else {
+                alarmBtn.classList.add('hidden');
+            }
+
+            document.getElementById('timerModal').classList.remove('hidden');
+            activeSwipedId = null;
+            renderTasks(); // Reset swiped UI
+        }
+
+        function startCountdown(mins) {
+            const task = tasks.find(t => t.id === activeTimerTaskId);
+            if (!task) return;
+
+            stopTimer(false); // clear existing
+            
+            timerState = {
+                active: true,
+                type: 'countdown',
+                remaining: mins * 60,
+                taskTitle: task.title
+            };
+            
+            closeModals();
+            updateTimerUI();
+            
+            timerState.intervalId = setInterval(() => {
+                timerState.remaining--;
+                if (timerState.remaining <= 0) {
+                    stopTimer(true);
+                    alert(`O tempo da tarefa "${timerState.taskTitle}" acabou!`);
+                } else {
+                    updateTimerUI();
+                }
+            }, 1000);
+        }
+
+        function startAlarm() {
+            const task = tasks.find(t => t.id === activeTimerTaskId);
+            if (!task || !task.endTime) return;
+
+            stopTimer(false);
+
+            timerState = {
+                active: true,
+                type: 'alarm',
+                targetTime: task.endTime,
+                taskTitle: task.title
+            };
+
+            closeModals();
+            updateTimerUI();
+
+            timerState.intervalId = setInterval(() => {
+                const now = new Date();
+                const [h, m] = timerState.targetTime.split(':').map(Number);
+                
+                if (now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m)) {
+                    stopTimer(true);
+                    alert(`Aviso: Horário de finalização da tarefa "${timerState.taskTitle}" atingido!`);
+                }
+            }, 5000); // Check every 5s for alarm
+        }
+
+        function stopTimer(hideUI = true) {
+            if (timerState.intervalId) clearInterval(timerState.intervalId);
+            timerState.active = false;
+            
+            if (hideUI) {
+                document.getElementById('timerBar').classList.add('hidden');
+            }
+        }
+
+        function updateTimerUI() {
+            const bar = document.getElementById('timerBar');
+            const icon = document.getElementById('timerIcon');
+            const text = document.getElementById('timerText');
+            const title = document.getElementById('timerTaskTitle');
+
+            if (timerState.active) {
+                bar.classList.remove('hidden');
+                title.textContent = timerState.taskTitle;
+                
+                if (timerState.type === 'countdown') {
+                    // Clock icon
+                    icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                    icon.classList.add('animate-pulse');
+                    icon.classList.remove('animate-bounce');
+                    text.textContent = formatDuration(timerState.remaining);
+                } else {
+                    // Bell icon
+                    icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>';
+                    icon.classList.remove('animate-pulse');
+                    icon.classList.add('animate-bounce');
+                    text.textContent = `Alarme: ${timerState.targetTime}`;
+                }
+            }
+        }
+
+        // Run
+        window.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
