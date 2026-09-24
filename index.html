@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Organizador de Tarefas</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e293b">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -16,6 +18,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            user-select: none;
         }
 
         /* 60px Grid Pattern */
@@ -30,23 +33,19 @@
             background-size: 100% 60px;
         }
 
-        /* Crucial to prevent native scrolling from hijacking our drag/swipe */
         .task-card {
             touch-action: none; 
             user-select: none;
             -webkit-user-select: none;
         }
 
-        /* Smooth snapping when released */
         .snap-transition {
             transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), top 0.2s ease-out;
         }
 
-        /* Hide scrollbar for a cleaner mobile look */
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Custom Range Slider */
         input[type=range] {
             -webkit-appearance: none;
             width: 100%;
@@ -95,7 +94,6 @@
             Tarefas
         </h1>
         <div class="flex items-center gap-3">
-            <!-- Global Focus Timer Button -->
             <button onclick="openGlobalFocusModal()" class="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-full transition-colors shadow-sm border border-indigo-100">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             </button>
@@ -106,7 +104,7 @@
     <!-- Main Content Area -->
     <main class="flex-1 relative overflow-y-auto overflow-x-hidden no-scrollbar" id="scrollContainer">
         
-        <!-- The Grid Container (1440px tall = 24 hours * 60px) -->
+        <!-- The Grid Container -->
         <div id="gridArea" class="relative w-full h-[1200px] grid-bg" onpointerdown="handleGridClick(event)">
             
             <!-- Real-time Timeline Dot -->
@@ -134,7 +132,7 @@
                 </div>
             </div>
 
-            <!-- Tasks Container (Tasks injected here via JS) -->
+            <!-- Tasks Container -->
             <div id="tasksContainer" class="absolute inset-0 pointer-events-none"></div>
 
         </div>
@@ -176,9 +174,7 @@
 
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Cor de Identificação</label>
-                    <div class="flex justify-between" id="colorPicker">
-                        <!-- Injected via JS -->
-                    </div>
+                    <div class="flex justify-between" id="colorPicker"></div>
                 </div>
 
                 <button type="submit" class="w-full pt-2">
@@ -252,9 +248,8 @@
 
     <script>
         const GRID_SIZE = 60;
-        const SWIPE_WIDTH = -180; // Width for 3 buttons (60px each)
+        const SWIPE_WIDTH = -180;
         
-        // Colors palette
         const COLORS = [
             { id: 'blue', classes: 'bg-blue-50 border-blue-200 text-blue-900', ring: 'focus:ring-blue-400' },
             { id: 'green', classes: 'bg-green-50 border-green-200 text-green-900', ring: 'focus:ring-green-400' },
@@ -263,13 +258,26 @@
             { id: 'purple', classes: 'bg-purple-50 border-purple-200 text-purple-900', ring: 'focus:ring-purple-400' }
         ];
 
-        // App State
+        // Load State from LocalStorage or default
         let state = {
             startTime: '13:00',
             endTime: '18:00',
             tasks: [],
-            editingId: null // Tracks if we are editing an existing task
+            editingId: null
         };
+
+        const savedData = localStorage.getItem('organizador_tarefas_state');
+        if (savedData) {
+            try {
+                state = JSON.parse(savedData);
+            } catch (e) {
+                console.error("Erro ao carregar dados salvos:", e);
+            }
+        }
+
+        function saveState() {
+            localStorage.setItem('organizador_tarefas_state', JSON.stringify(state));
+        }
 
         let timer = {
             active: false,
@@ -281,13 +289,15 @@
             title: null
         };
 
-        // DOM Elements
         const tasksContainer = document.getElementById('tasksContainer');
         const scrollContainer = document.getElementById('scrollContainer');
         const gridArea = document.getElementById('gridArea');
 
-        // Initialization
         window.addEventListener('DOMContentLoaded', () => {
+            // Apply loaded times to display
+            document.getElementById('startTimeDisplay').textContent = state.startTime;
+            document.getElementById('endTimeDisplay').textContent = state.endTime;
+
             initColorPicker();
             renderTasks();
             updateTimelineDot();
@@ -313,16 +323,14 @@
             tasksContainer.innerHTML = '';
             
             state.tasks.forEach(task => {
-                const colorObj = COLORS[task.colorIdx];
+                const colorObj = COLORS[task.colorIdx] || COLORS[0];
                 
-                // Outer wrapper
                 const wrapper = document.createElement('div');
                 wrapper.className = 'absolute left-4 right-8 pointer-events-auto z-10';
                 wrapper.style.top = `${task.top}px`;
                 wrapper.style.height = `${GRID_SIZE - 4}px`; 
                 wrapper.dataset.id = task.id;
 
-                // Action Buttons Background (3 buttons: Edit, Timer, Delete)
                 const actionsBg = document.createElement('div');
                 actionsBg.className = 'absolute inset-y-0 right-0 flex rounded-xl overflow-hidden shadow-inner bg-gray-100 border border-gray-200';
                 actionsBg.style.width = Math.abs(SWIPE_WIDTH) + 'px';
@@ -341,7 +349,6 @@
                     </button>
                 `;
 
-                // Main Draggable Card
                 const card = document.createElement('div');
                 card.className = `task-card absolute inset-0 flex items-center px-4 rounded-xl border shadow-sm cursor-grab active:cursor-grabbing snap-transition ${colorObj.classes}`;
                 if (task.swiped) card.style.transform = `translateX(${SWIPE_WIDTH}px)`;
@@ -351,11 +358,10 @@
 
                 card.innerHTML = `
                     <div class="flex-1 min-w-0 pr-2">
-                        <p class="font-bold text-[15px] truncate text-gray-800">${task.title}</p>
-                        ${task.desc ? `<p class="text-xs text-gray-500 font-medium mt-0.5 truncate">${task.desc}</p>` : ''}
+                        <p class="font-bold text-[15px] truncate text-gray-800">${escapeHtml(task.title)}</p>
+                        ${task.desc ? `<p class="text-xs text-gray-500 font-medium mt-0.5 truncate">${escapeHtml(task.desc)}</p>` : ''}
                     </div>
                     ${timeText ? `<div class="text-[11px] font-bold px-2 py-1 bg-white/60 rounded-md shrink-0 border border-black/5 text-gray-600">${timeText}</div>` : ''}
-                    <!-- Grip handle -->
                     <div class="ml-3 shrink-0 opacity-30">
                         <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M7 2a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 8a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0zM7 14a1 1 0 1 1-2 0 1 1 0 0 1 2 0zm3 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
@@ -444,10 +450,10 @@
                     let snappedTop = Math.round(currentTop / GRID_SIZE) * GRID_SIZE;
                     taskObj.top = snappedTop;
                     wrapperEl.style.top = `${snappedTop}px`;
+                    saveState(); // Salva posição nova
                     
                 } else if (dragState.mode === 'swipe') {
                     const currentTx = dragState.startTx + (e.clientX - dragState.startX);
-                    // Snap open if swiped more than half way
                     if (currentTx < (SWIPE_WIDTH / 2)) {
                         taskObj.swiped = true;
                         cardEl.style.transform = `translateX(${SWIPE_WIDTH}px)`;
@@ -469,8 +475,6 @@
             cardEl.addEventListener('pointercancel', handleUpOrCancel);
         }
 
-        // --- Core UI Actions ---
-
         function handleGridClick(e) {
             if (e.target.closest('.pointer-events-auto')) return;
             
@@ -478,7 +482,7 @@
             const clickY = e.clientY - rect.top;
             const snappedY = Math.floor(clickY / GRID_SIZE) * GRID_SIZE;
 
-            openTaskModal(null, snappedY); // null id means Create New
+            openTaskModal(null, snappedY);
         }
 
         function openTaskModal(taskId = null, yPos = 0) {
@@ -488,15 +492,16 @@
 
             if (taskId) {
                 const task = state.tasks.find(t => t.id === taskId);
-                document.getElementById('taskTitle').value = task.title;
-                document.getElementById('taskDesc').value = task.desc;
-                document.getElementById('taskStartTime').value = task.start;
-                document.getElementById('taskEndTime').value = task.end;
-                document.getElementById('taskYPos').value = task.top;
-                document.querySelector(`input[name="taskColor"][value="${task.colorIdx}"]`).checked = true;
-                // Close swipe state for clean visual
-                task.swiped = false;
-                renderTasks();
+                if (task) {
+                    document.getElementById('taskTitle').value = task.title;
+                    document.getElementById('taskDesc').value = task.desc || '';
+                    document.getElementById('taskStartTime').value = task.start || '';
+                    document.getElementById('taskEndTime').value = task.end || '';
+                    document.getElementById('taskYPos').value = task.top;
+                    document.querySelector(`input[name="taskColor"][value="${task.colorIdx}"]`).checked = true;
+                    task.swiped = false;
+                    renderTasks();
+                }
             } else {
                 document.getElementById('taskYPos').value = yPos;
                 document.querySelector('input[name="taskColor"][value="0"]').checked = true;
@@ -518,6 +523,7 @@
 
         function initColorPicker() {
             const container = document.getElementById('colorPicker');
+            container.innerHTML = '';
             COLORS.forEach((c, i) => {
                 const [bg, border] = c.classes.split(' ');
                 const html = `
@@ -550,27 +556,25 @@
             };
 
             if (state.editingId) {
-                // Update
                 const index = state.tasks.findIndex(t => t.id === state.editingId);
                 if (index !== -1) {
                     state.tasks[index] = { ...state.tasks[index], ...taskData };
                 }
             } else {
-                // Create
                 taskData.id = 't_' + Date.now();
                 state.tasks.push(taskData);
             }
 
+            saveState(); // Salva no PC
             closeModal('taskModal');
             renderTasks();
         }
 
         function deleteTask(id) {
             state.tasks = state.tasks.filter(t => t.id !== id);
+            saveState(); // Salva alteração
             renderTasks();
         }
-
-        // --- Timeline & Markers ---
 
         function editMarker(type) {
             const current = type === 'start' ? state.startTime : state.endTime;
@@ -581,6 +585,7 @@
             if (newTime && /^\d{2}:\d{2}$/.test(newTime)) {
                 state[type + 'Time'] = newTime;
                 document.getElementById(`${type}TimeDisplay`).textContent = newTime;
+                saveState(); // Salva novo horário dos marcadores
                 updateTimelineDot();
             } else if (newTime !== null) {
                 alert("Formato inválido. Use HH:MM");
@@ -614,9 +619,6 @@
             dot.style.top = `${topY}px`;
         }
 
-        // --- Timers Logic ---
-
-        // Task Specific Timer
         function openTaskTimerModal(taskId) {
             const task = state.tasks.find(t => t.id === taskId);
             if (!task) return;
@@ -677,7 +679,6 @@
             }, 5000); 
         }
 
-        // Global Focus Timer Slider
         function openGlobalFocusModal() {
             document.getElementById('globalFocusModal').classList.remove('hidden');
         }
@@ -693,7 +694,6 @@
             closeModal('globalFocusModal');
         }
 
-        // Generic Timer Updater
         function updateTimerDisplay() {
             if (!timer.active || timer.type !== 'countdown') return;
 
@@ -716,6 +716,9 @@
             document.getElementById('activeTimerBanner').classList.add('hidden');
         }
 
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>
